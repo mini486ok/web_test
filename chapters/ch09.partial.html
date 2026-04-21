@@ -1,0 +1,170 @@
+<section class="chapter" id="ch9" data-chapter="9"><header class="chapter-meta"><p class="chapter-meta__eyebrow">Chapter 9</p><h2 class="chapter-meta__title">LLM이 잘 쓰는 MCP 만드는 8가지 팁</h2><div class="chapter-meta__row"><span class="chapter-meta__estimate">18분</span><div class="chapter-meta__prereqs"><span class="label">선행</span> <a href="#ch4">CH4</a>, <a href="#ch6">CH6</a></div></div><div class="chapter-meta__goals"><p class="chapter-meta__goals-title">학습 목표</p><ul><li>도구 이름·docstring·스키마·에러 메시지를 LLM 친화적으로 다듬을 수 있다</li><li>Pydantic Field로 인자 description과 examples를 추가할 수 있다</li><li>Chapter 4의 add를 8가지 원칙을 모두 적용한 버전으로 다시 쓴다</li></ul></div></header>
+<blockquote><p>도구가 동작하는 것과 LLM이 그 도구를 <strong>정확하게</strong> 사용하는 것은 다른 문제예요. 이 챕터에서는 같은 <code class="inline-code">add</code> 함수를 8가지 작은 습관을 적용해 단계적으로 다듬습니다. 각 팁이 왜 효과 있는지 한 줄씩 설명할게요. 18분 정도 걸려요.</p></blockquote>
+<h2 id="ch9-h2-2" class="heading heading--h2">8가지 팁 한눈에</h2>
+<div class="table-wrap"><table class="basic-table"><thead><tr><th>#</th><th>팁</th><th>한 줄로</th></tr></thead><tbody><tr><td>1</td><td>도구 네이밍</td><td>동사 + 명사. 너무 추상적이거나 너무 일반적이지 않게</td></tr><tr><td>2</td><td>Docstring</td><td>LLM이 가장 먼저 읽는 사용 설명서. 언제 쓸지·입력 의미·출력 의미</td></tr><tr><td>3</td><td>입출력 스키마</td><td>Pydantic Field로 description, examples 추가</td></tr><tr><td>4</td><td>에러 메시지</td><td>무엇이 / 왜 / 어떻게 고치나 세 가지</td></tr><tr><td>5</td><td>도구 수 관리</td><td>보통 5~15개. 너무 많으면 LLM이 헷갈림</td></tr><tr><td>6</td><td>부작용 표시</td><td>readonly vs mutate를 docstring에 명시</td></tr><tr><td>7</td><td>예시 값</td><td>description에 구체 예시 한 개</td></tr><tr><td>8</td><td>반복 개선</td><td>LLM이 잘못 호출하는 걸 보고 description 다듬기</td></tr></tbody></table></div>
+<h2 id="ch9-h2-3" class="heading heading--h2">팁 1·2 — 네이밍과 Docstring (Before / After)</h2>
+<h3 id="ch9-h3-4" class="heading heading--h3">Before — 좋지 않은 버전</h3>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">@mcp.tool()
+def calc(x, y):
+    &quot;&quot;&quot;do calculation&quot;&quot;&quot;
+    return x + y</code></pre></figure>
+<p>문제점:</p>
+<ul><li>이름 <code class="inline-code">calc</code>가 너무 추상적이에요. LLM이 "이게 무슨 계산을 한다는 거지?" 하고 헷갈립니다.</li><li>인자 이름 <code class="inline-code">x</code>, <code class="inline-code">y</code>는 의미가 없음. 타입 힌트도 없음.</li><li>docstring <code class="inline-code">&quot;do calculation&quot;</code>은 정보가 없는 거나 마찬가지.</li></ul>
+<h3 id="ch9-h3-5" class="heading heading--h3">After — 다듬은 버전</h3>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">@mcp.tool()
+def add_integers(a: int, b: int) -&gt; int:
+    &quot;&quot;&quot;Add two integers and return their sum.
+
+    Use this tool when the user wants to compute the sum of exactly
+    two integer values. For three or more numbers, call this tool
+    multiple times accumulating intermediate results.
+
+    Args:
+        a: The first integer addend. Example: 5
+        b: The second integer addend. Example: 7
+
+    Returns:
+        The integer sum of a and b. Example: 12 when a=5, b=7.
+
+    Side effects:
+        None. This is a pure function.
+    &quot;&quot;&quot;
+    return a + b</code></pre></figure>
+<p>개선점:</p>
+<ul><li>이름이 동사+명사(<code class="inline-code">add_integers</code>). "정수 두 개를 더한다"는 게 이름만 봐도 명확해요.</li><li>첫 줄에 무엇을 하는지 한 문장.</li><li>두 번째 단락에 <strong>언제 써야 하는지</strong> + <strong>두 개 이상이면 어떻게 해야 하는지</strong>.</li><li>각 인자 설명에 <strong>타입 + 의미 + 예시</strong>.</li><li>반환값 설명에 <strong>타입 + 의미 + 예시</strong>.</li><li>부작용 표시.</li></ul>
+<p>LLM은 이 docstring 전체를 읽고 호출 결정을 합니다. <strong>단어 하나하나가 모두 정확도에 영향을 줘요.</strong></p>
+<aside class="callout callout--tip"><div class="callout__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.8.6 1 1 1 1.7V18h6v-1.6c0-.7.2-1.1 1-1.7A7 7 0 0 0 12 2z"/></svg></div><div class="callout__body"><p class="callout__title">docstring을 길게 쓰는 게 정말 효과 있나요?</p><p>네. 실제로 같은 함수에 docstring만 짧은 버전 / 자세한 버전 두 개를 만들어 비교하면, 자세한 버전 쪽에서 LLM이 잘못 호출하는 비율이 눈에 띄게 줍니다. 단, <strong>너무 길면 토큰을 낭비</strong>하므로 핵심 정보(언제 쓰는지, 인자 의미, 부작용)에 집중하세요.</p></div></aside>
+<h2 id="ch9-h2-6" class="heading heading--h2">팁 3 — 스키마: Pydantic Field</h2>
+<p>타입 힌트만으로도 충분히 동작하지만, 인자에 더 풍부한 메타데이터를 붙이고 싶다면 <strong>Pydantic Field</strong>를 씁니다. MCP SDK가 자동으로 JSON Schema로 변환해 LLM에 전달해줘요.</p>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">from typing import Annotated
+from pydantic import Field
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP(&quot;Hello MCP&quot;)
+
+
+@mcp.tool()
+def add_integers(
+    a: Annotated[int, Field(description=&quot;The first integer addend.&quot;, examples=[5, 10])],
+    b: Annotated[int, Field(description=&quot;The second integer addend.&quot;, examples=[7, -3])],
+) -&gt; int:
+    &quot;&quot;&quot;Add two integers and return their sum.&quot;&quot;&quot;
+    return a + b</code></pre></figure>
+<p><code class="inline-code">Annotated[int, Field(...)]</code>이 처음 보면 어렵지만 패턴은 단순해요. <strong>타입을 <code class="inline-code">Annotated</code>로 감싸고, 두 번째 자리에 <code class="inline-code">Field</code>를 적는다.</strong> 그 안의 <code class="inline-code">description</code>과 <code class="inline-code">examples</code>가 LLM이 보는 스키마에 그대로 포함됩니다.</p>
+<aside class="callout callout--info"><div class="callout__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><circle cx="12" cy="8" r="0.8" fill="currentColor"/></svg></div><div class="callout__body"><p class="callout__title">Annotated가 뭔가요?</p><p>Python의 표준 typing 모듈에서 제공하는 "타입 힌트에 부가 정보를 붙이는 방법"이에요. <code class="inline-code">Annotated[int, ...]</code>는 "기본 타입은 int이고, 추가로 이런 메타데이터가 붙어 있다"는 뜻입니다. Pydantic이 이걸 읽어서 검증과 스키마를 만듭니다.</p></div></aside>
+<h3 id="ch9-h3-7" class="heading heading--h3">더 복잡한 입출력엔 BaseModel</h3>
+<p>여러 필드를 가진 객체를 주고받을 때는 Pydantic <code class="inline-code">BaseModel</code>을 정의합니다.</p>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">from pydantic import BaseModel, Field
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP(&quot;Hello MCP&quot;)
+
+
+class Point(BaseModel):
+    &quot;&quot;&quot;A 2D point with x and y coordinates.&quot;&quot;&quot;
+
+    x: float = Field(description=&quot;The x-coordinate of the point.&quot;, examples=[1.5])
+    y: float = Field(description=&quot;The y-coordinate of the point.&quot;, examples=[2.5])
+
+
+class DistanceResult(BaseModel):
+    &quot;&quot;&quot;The result of a distance computation between two points.&quot;&quot;&quot;
+
+    distance: float = Field(description=&quot;The Euclidean distance.&quot;)
+    points: list[Point] = Field(description=&quot;The two input points, echoed back.&quot;)
+
+
+@mcp.tool()
+def compute_distance(p1: Point, p2: Point) -&gt; DistanceResult:
+    &quot;&quot;&quot;Compute the Euclidean distance between two 2D points.
+
+    Use this when the user provides two coordinate pairs and asks for the
+    straight-line distance between them.
+    &quot;&quot;&quot;
+    dx = p1.x - p2.x
+    dy = p1.y - p2.y
+    return DistanceResult(
+        distance=(dx * dx + dy * dy) ** 0.5,
+        points=[p1, p2],
+    )</code></pre></figure>
+<p>LLM은 <code class="inline-code">Point</code>와 <code class="inline-code">DistanceResult</code>의 description까지 모두 받아 보기 때문에 호출 정확도가 크게 올라가요.</p>
+<h2 id="ch9-h2-8" class="heading heading--h2">팁 4 — 에러 메시지 3요소</h2>
+<p>Chapter 6에서 한 번 다뤘던 패턴이에요. 다시 정리하면:</p>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">if b == 0:
+    raise ValueError(
+        &quot;Cannot divide by zero: &#x27;b&#x27; must be a non-zero number. &quot;  # 무엇이 / 왜
+        &quot;Try calling this tool again with a non-zero value for &#x27;b&#x27;.&quot;  # 어떻게
+    )</code></pre></figure>
+<p>LLM은 이 메시지를 받고 <strong>다음 호출에서 b를 0이 아닌 값으로 바꿔서 자동 재시도</strong> 할 수 있어요. 메시지가 모호하면 LLM은 사용자에게 "에러가 났습니다"라고 말하고 멈춥니다.</p>
+<h2 id="ch9-h2-9" class="heading heading--h2">팁 5 — 도구 수 관리</h2>
+<p>한 서버에 도구가 30개, 50개씩 있으면:</p>
+<ul><li>LLM이 도구 목록을 읽는 데 토큰을 많이 쓰고</li><li>비슷한 이름의 도구들 사이에서 헷갈리고</li><li>응답 속도가 느려집니다.</li></ul>
+<p><strong>경험적으로 한 서버에 5~15개가 적당해요.</strong> 너무 많아지면:</p>
+<ul><li>비슷한 도구를 묶어 한 도구로 정리 (인자로 분기)</li><li>또는 서버 자체를 두 개로 나누기 (예: <code class="inline-code">read_*</code>만 모은 서버, <code class="inline-code">write_*</code>만 모은 서버)</li></ul>
+<aside class="callout callout--warn"><div class="callout__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="0.8" fill="currentColor"/></svg></div><div class="callout__body"><p class="callout__title">"인자로 분기"가 단일 책임 원칙(Chapter 6)과 충돌하지 않나요?</p><p>네, 실제로 충돌합니다. 그래서 균형을 잡아야 해요. 가이드라인:</p>
+<ul><li><strong>동작이 비슷하고 입력만 약간 다르면</strong> → 한 도구로 묶기</li><li><strong>동작 자체가 다르면</strong> → 도구를 따로 만들기
+정답은 없고, LLM이 잘못 호출하는 패턴을 보면서 다듬는 게 가장 정확합니다.</li></ul></div></aside>
+<h2 id="ch9-h2-10" class="heading heading--h2">팁 6·7 — 부작용 표시 + 예시 값</h2>
+<p>이미 위의 docstring 예시에서 자연스럽게 들어갔어요. 한 번 더 정리하면:</p>
+<ul><li><strong>Side effects 섹션</strong>을 docstring에 추가. <code class="inline-code">None</code>이면 명시적으로 <code class="inline-code">None</code>이라고 적기. 파일/DB/네트워크에 변화를 만든다면 분명히 써두기.</li><li><strong>Example 값</strong>을 인자와 반환값 모두에 적기. 추상적인 설명보다 구체적인 숫자/문자열 한 개가 더 도움이 됩니다.</li></ul>
+<h2 id="ch9-h2-11" class="heading heading--h2">팁 8 — 반복 개선 루프</h2>
+<p>마지막 팁이 가장 중요해요. <strong>한 번에 완벽한 docstring을 쓸 수는 없습니다.</strong> 실제로 Claude/Cursor에서 자기 도구를 호출시켜 보고, LLM이 잘못 호출하는 패턴을 관찰하면서 description을 다듬는 게 정석이에요.</p>
+<p>루프는 이렇게 돌아갑니다:</p>
+<ol><li>도구를 만들고 docstring을 일단 적당히 적는다</li><li>Claude Desktop에서 자연어로 5~10번 호출해본다</li><li>LLM이 헷갈리는 지점을 발견한다 (잘못된 인자, 잘못된 타이밍, 에러 후 멈춤 등)</li><li>그 지점에 맞춰 docstring 또는 에러 메시지를 다듬는다</li><li>다시 2번으로</li></ol>
+<p>이 루프를 한두 번 돌리는 것만으로도 도구 사용 정확도가 크게 올라갑니다.</p>
+<h2 id="ch9-h2-12" class="heading heading--h2">종합 — Chapter 4의 add를 다시 쓰기</h2>
+<p>마지막으로 Chapter 4의 <code class="inline-code">add</code>를 위 8가지 원칙을 모두 적용해 다시 써봅시다.</p>
+<p><code class="inline-code file-path">C:\mcp-lab\hello-mcp\server.py</code>를 열어 다음과 같이 바꾸세요.</p>
+<figure class="codeblock" data-lang="python"><figcaption class="codeblock__header"><span class="codeblock__lang">Python</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-python">from typing import Annotated
+
+from mcp.server.fastmcp import FastMCP
+from pydantic import Field
+
+mcp = FastMCP(&quot;Hello MCP&quot;)
+
+
+@mcp.tool()
+def add_integers(
+    a: Annotated[
+        int,
+        Field(description=&quot;The first integer addend.&quot;, examples=[5, 10, -3]),
+    ],
+    b: Annotated[
+        int,
+        Field(description=&quot;The second integer addend.&quot;, examples=[7, 0, 100]),
+    ],
+) -&gt; int:
+    &quot;&quot;&quot;Add two integers and return their sum.
+
+    Use this tool when the user asks to compute the sum of exactly two integers.
+    For floating-point numbers, use &#x27;add_floats&#x27; instead. For three or more
+    numbers, call this tool repeatedly with intermediate sums.
+
+    Args:
+        a: The first integer to add. Example: 5
+        b: The second integer to add. Example: 7
+
+    Returns:
+        The integer sum of a and b. Example: 12 when a=5, b=7.
+
+    Side effects:
+        None. This is a pure, read-only operation.
+
+    Raises:
+        TypeError: If either argument cannot be coerced to an integer.
+    &quot;&quot;&quot;
+    if not isinstance(a, int) or not isinstance(b, int):
+        raise TypeError(
+            f&quot;Both arguments must be integers. Got a={type(a).__name__}, &quot;
+            f&quot;b={type(b).__name__}. Try calling again with integer values.&quot;
+        )
+    return a + b
+
+
+if __name__ == &quot;__main__&quot;:
+    mcp.run(transport=&quot;stdio&quot;)</code></pre></figure>
+<p>저장한 다음 Claude Desktop을 완전 종료 후 재시작합니다. 채팅창에서 다음을 시도해 보세요.</p>
+<figure class="codeblock codeblock--output" data-lang="text"><figcaption class="codeblock__header"><span class="codeblock__lang">출력</span><button class="codeblock__copy" type="button" aria-label="코드 복사"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="codeblock__copy-label">복사</span></button></figcaption><pre><code class="language-plaintext">add_integers 도구로 17과 25를 더해줘.</code></pre></figure>
+<p>이전과 동일하게 동작하지만, <strong>LLM에 노출되는 정보가 훨씬 풍부해졌어요.</strong> 이제 같은 방식으로 자기 알고리즘에도 적용해 보세요.</p>
+<aside class="callout callout--tip"><div class="callout__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.8.6 1 1 1 1.7V18h6v-1.6c0-.7.2-1.1 1-1.7A7 7 0 0 0 12 2z"/></svg></div><div class="callout__body"><p class="callout__title">도구 이름이 바뀌었으니 주의</p><p>Chapter 4에서 <code class="inline-code">add</code>였던 도구 이름이 이제 <code class="inline-code">add_integers</code>로 바뀌었어요. Claude Desktop에서 처음 호출할 때 도구 이름을 잘못 부르면 못 찾을 수 있습니다. "5와 7을 더해줘"처럼 자연어로 부탁하면 LLM이 알아서 새 이름을 찾을 거예요.</p></div></aside>
+<section class="checkpoint" data-chapter="9"><h3 class="checkpoint__title"><svg class="checkpoint__icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>여기까지 따라왔다면</h3><ul class="checkpoint__list"><li><label><input type="checkbox" data-key="mcp-guide:checkpoint:ch9:0"><span>8가지 팁 중 자기 코드에 적용할 만한 것을 두 가지 이상 골랐다</span></label></li><li><label><input type="checkbox" data-key="mcp-guide:checkpoint:ch9:1"><span><code class="inline-code">Annotated</code>와 <code class="inline-code">Field</code>를 사용한 인자 description을 적어봤다</span></label></li><li><label><input type="checkbox" data-key="mcp-guide:checkpoint:ch9:2"><span><code class="inline-code">add_integers</code>로 다듬은 버전이 Claude Desktop에서 호출된다</span></label></li><li><label><input type="checkbox" data-key="mcp-guide:checkpoint:ch9:3"><span>LLM이 잘못 호출하는 것을 한 번이라도 관찰하고 description을 수정해봤다 (또는 그렇게 할 계획을 세웠다)</span></label></li></ul></section></section>
